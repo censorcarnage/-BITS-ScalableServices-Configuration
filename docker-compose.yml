@@ -1,0 +1,70 @@
+version: '3.8'
+services:
+    postgres:
+        image: postgres:10.5
+        restart: always
+        environment: 
+          - POSTGRES_USER=postgres
+          - POSTGRES_PASSWORD=postgres
+        logging:
+          options:
+            max-size: 10m
+            max-file: "3"
+        ports:
+          - '5432:5432'
+        volumes:
+          #- ./postgres-data:/var/lib/postgresql/data
+          # copy the sql script to create tables
+          - ./BITS-ScalableServices-Assignment-TokenService/database/sql/create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql
+          # copy the sql script to fill tables
+          - ./BITS-ScalableServices-Assignment-TokenService/database/sql/fill_tables.sql:/docker-entrypoint-initdb.d/fill_tables.sql
+    tokenservice:
+      depends_on:
+        - postgres
+      build: ./BITS-ScalableServices-Assignment-TokenService/
+      restart: on-failure
+      ports:
+        - '8088:8088'
+      environment:
+        SPRING_APPLICATION_JSON: '{
+          "spring.datasource.url"  : "jdbc:postgresql://postgres:5432/postgres",
+          "spring.datasource.username" : "postgres",
+          "spring.datasource.password" : "postgres",
+          "spring.jpa.properties.hibernate.dialect" : "org.hibernate.dialect.PostgreSQLDialect",
+          "server.port" : "8088",
+          "server.address" : "0.0.0.0"
+        }'
+      #volumes:
+        #- .m2:/root/.m2
+      stdin_open: true
+      tty: true
+    cache:
+      image: redis:6.2-alpine
+      restart: always
+      ports:
+        - '6379:6379'
+      command: redis-server --save 20 1 --loglevel warning
+    urlservice:
+      depends_on:
+        - tokenservice
+      build: ./BITS-ScalableServices-Assignment-URLService/
+      restart: on-failure
+      ports:
+        - '9011:9011'
+      environment:
+        SPRING_APPLICATION_JSON: '{
+        "mongo.connection.string"  : "mongodb+srv://admin:admin@urlmapping.bmlheqk.mongodb.net/?retryWrites=true&w=majority",
+        "mongodb.database.name" : "URLMapping",
+        "config.http.read.timeout" : "2",
+        "config.http.connection.timeout" : "2",
+        "config.node.id" : "n1",
+        "config.range.url" : "http://host.docker.internal:8088/range/",
+        "server.port":"9011",
+        "server.address":"0.0.0.0",
+        "spring.redis.host":"host.docker.internal",
+        "spring.redis.port":"6379"
+      }'
+      #volumes:
+       # - .m2:/root/.m2
+      stdin_open: true
+      tty: true
